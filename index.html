@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PageFault — Memory Management</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;600;700;900&family=Barlow+Condensed:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f0ede8;
+    --surface: #faf8f5;
+    --border: #d8d3cb;
+    --border-dark: #bfb9ae;
+    --text: #1a1714;
+    --text-muted: #7a746c;
+    --red: #c0392b;
+    --red-dark: #a93226;
+    --red-bg: rgba(192,57,43,0.06);
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Barlow', sans-serif;
+    --cond: 'Barlow Condensed', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  /* ── TOP NAV ── */
+  .topnav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 18px 48px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .topnav-dash {
+    width: 28px;
+    height: 2px;
+    background: var(--red);
+    flex-shrink: 0;
+  }
+  .topnav-text {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 40px 48px 0;
+  }
+  .hero-title {
+    font-family: var(--cond);
+    font-size: clamp(72px, 12vw, 120px);
+    font-weight: 900;
+    line-height: 0.9;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+  .hero-title span.white { color: var(--text); }
+  .hero-title span.red   { color: var(--red); }
+
+  /* ── MAIN LAYOUT ── */
+  .page-body {
+    padding: 40px 48px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── SECTION ── */
+  .section {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    margin-bottom: 2px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+  }
+  .section-name {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ── CONFIG BODY ── */
+  .config-body {
+    padding: 28px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .field-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .ref-row {
+    display: flex;
+    gap: 8px;
+  }
+  .ref-row input[type="text"] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s;
+  }
+  .ref-row input[type="text"]:focus { border-color: var(--text); }
+  .btn-random {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all .15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .btn-random:hover { border-color: var(--text); color: var(--text); }
+
+  .config-row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+
+  input[type="number"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus { border-color: var(--text); }
+
+  /* algo buttons */
+  .algo-row {
+    display: flex;
+    gap: 8px;
+  }
+  .algo-btn {
+    flex: 1;
+    padding: 12px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .15s;
+    text-align: center;
+  }
+  .algo-btn:hover { border-color: var(--text); color: var(--text); }
+  .algo-btn.active {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+  }
+
+  /* action row */
+  .action-row {
+    display: flex;
+    gap: 10px;
+  }
+  .btn-run {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 28px;
+    background: var(--text);
+    border: 1px solid var(--text);
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--surface);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .btn-run:hover { background: var(--red); border-color: var(--red); }
+  .btn-reset {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 13px 22px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .btn-reset:hover { border-color: var(--text); color: var(--text); }
+
+  .error-msg {
+    display: none;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--red);
+    margin-top: 8px;
+  }
+  .error-msg.visible { display: block; }
+
+  /* ── RESULTS STRIP ── */
+  .results-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    border-top: none;
+  }
+  .result-cell {
+    padding: 20px 24px;
+    border-right: 1px solid var(--border);
+  }
+  .result-cell:last-child { border-right: none; }
+  .result-cell-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .result-cell-value {
+    font-family: var(--cond);
+    font-size: 36px;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    color: var(--text);
+  }
+  .result-cell-value.red { color: var(--red); }
+  .result-cell-value.green { color: #27ae60; }
+  .result-cell-value.orange { color: #e67e22; }
+
+  /* ── TABLE SECTION ── */
+  .table-section {
+    margin-top: 2px;
+  }
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead { background: var(--bg); }
+  th {
+    padding: 10px 16px;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th.center { text-align: center; }
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(216,211,203,0.5);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  td.center { text-align: center; }
+  tr:last-child td { border-bottom: none; }
+
+  tr.row-hit { background: rgba(39,174,96,0.05); }
+  tr.row-fault { background: rgba(192,57,43,0.04); }
+
+  .page-num { font-weight: 700; font-size: 15px; }
+  .frame-val { color: var(--text-muted); }
+  .frame-val.new-page { color: var(--red); font-weight: 700; }
+  .frame-val.empty { color: var(--border); }
+
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+  .badge-hit { background: rgba(39,174,96,0.12); color: #219653; border: 1px solid rgba(39,174,96,0.25); }
+  .badge-fault { background: rgba(192,57,43,0.1); color: var(--red); border: 1px solid rgba(192,57,43,0.2); }
+
+  .algo-note {
+    padding: 14px 24px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    font-family: var(--mono);
+    background: var(--bg);
+  }
+
+  /* progress bar in hit ratio cell */
+  .ratio-bar-outer {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .ratio-bar-inner {
+    height: 100%;
+    background: #27ae60;
+    border-radius: 2px;
+    transition: width .5s ease;
+  }
+
+  /* placeholder */
+  .results-placeholder {
+    padding: 28px 24px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-dash"></div>
+  <span class="topnav-text">OS / Memory Management</span>
+</nav>
+
+<div class="hero">
+  <h1 class="hero-title">
+    <span class="white">PAGE</span><span class="red">FAULT</span>
+  </h1>
+</div>
+
+<div class="page-body">
+
+  <!-- 01 CONFIGURATION -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <span class="section-name">Configuration</span>
+    </div>
+    <div class="config-body">
+
+      <!-- Reference String -->
+      <div>
+        <div class="field-label">Reference String</div>
+        <div class="ref-row">
+          <input type="text" id="refString" value="7 4 4 7 5 2 6 4 2 3 4" placeholder="e.g. 7 0 1 2 0 3" spellcheck="false">
+          <button class="btn-random" onclick="generateRandom()">⟳ Random</button>
+        </div>
+      </div>
+
+      <!-- Frames + Algorithm -->
+      <div class="config-row2">
+        <div>
+          <div class="field-label">Number of Frames</div>
+          <input type="number" id="numFrames" value="5" min="1" max="10">
+        </div>
+        <div>
+          <div class="field-label">Algorithm</div>
+          <div class="algo-row">
+            <button class="algo-btn active" data-algo="FIFO">FIFO</button>
+            <button class="algo-btn" data-algo="Optimal">OPT</button>
+            <button class="algo-btn" data-algo="LRU">LRU</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div>
+        <div class="action-row">
+          <button class="btn-run" onclick="runSimulation()">▶ Run Simulation</button>
+          <button class="btn-reset" onclick="resetAll()">✕ Reset</button>
+        </div>
+        <div class="error-msg" id="errorMsg"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 02 RESULTS -->
+  <div class="section" id="resultsSection">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <span class="section-name">Results</span>
+    </div>
+    <div id="resultsBody">
+      <div class="results-placeholder">— Run a simulation to see results</div>
+    </div>
+  </div>
+
+  <!-- 03 TRACE -->
+  <div class="section table-section" id="traceSection" style="display:none">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <span class="section-name">Step-by-Step Trace</span>
+    </div>
+    <div class="table-wrap">
+      <table id="traceTable"></table>
+    </div>
+    <div class="algo-note" id="algoNote"></div>
+  </div>
+
+</div>
+
+<script>
+let selectedAlgo = 'FIFO';
+
+document.querySelectorAll('.algo-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedAlgo = btn.dataset.algo;
+  });
+});
+
+function generateRandom() {
+  const len = Math.floor(Math.random() * 7) + 8;
+  const max = Math.floor(Math.random() * 4) + 5;
+  const arr = Array.from({ length: len }, () => Math.floor(Math.random() * max));
+  document.getElementById('refString').value = arr.join(' ');
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+function clearError() {
+  document.getElementById('errorMsg').classList.remove('visible');
+}
+
+function resetAll() {
+  document.getElementById('refString').value = '';
+  document.getElementById('numFrames').value = '3';
+  document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-algo="FIFO"]').classList.add('active');
+  selectedAlgo = 'FIFO';
+  clearError();
+  document.getElementById('resultsBody').innerHTML = '<div class="results-placeholder">— Run a simulation to see results</div>';
+  document.getElementById('traceSection').style.display = 'none';
+}
+
+// Algorithms
+function runFIFO(refs, fc) {
+  let frames = [], queue = [], steps = [];
+  for (let page of refs) {
+    let isHit = frames.includes(page), newPage = null;
+    if (!isHit) {
+      newPage = page;
+      if (frames.length < fc) { frames.push(page); }
+      else { let old = queue.shift(); frames[frames.indexOf(old)] = page; }
+      queue.push(page);
+    }
+    steps.push({ page, hit: isHit, frames: [...frames], newPage });
+  }
+  return steps;
+}
+
+function runOptimal(refs, fc) {
+  let frames = [], steps = [];
+  for (let i = 0; i < refs.length; i++) {
+    let page = refs[i], isHit = frames.includes(page), newPage = null;
+    if (!isHit) {
+      newPage = page;
+      if (frames.length < fc) { frames.push(page); }
+      else {
+        let dist = frames.map(f => { let n = refs.indexOf(f, i+1); return n === -1 ? Infinity : n; });
+        frames[dist.indexOf(Math.max(...dist))] = page;
+      }
+    }
+    steps.push({ page, hit: isHit, frames: [...frames], newPage });
+  }
+  return steps;
+}
+
+function runLRU(refs, fc) {
+  let frames = [], history = [], steps = [];
+  for (let page of refs) {
+    let isHit = frames.includes(page), newPage = null;
+    if (!isHit) {
+      newPage = page;
+      if (frames.length < fc) { frames.push(page); }
+      else {
+        let lu = frames.map(f => history.lastIndexOf(f));
+        frames[lu.indexOf(Math.min(...lu))] = page;
+      }
+    }
+    history.push(page);
+    steps.push({ page, hit: isHit, frames: [...frames], newPage });
+  }
+  return steps;
+}
+
+function runSimulation() {
+  clearError();
+  const raw = document.getElementById('refString').value;
+  const nf = parseInt(document.getElementById('numFrames').value);
+  const refs = raw.trim().split(/[\s,]+/).filter(x => x !== '').map(Number);
+
+  if (!refs.length || refs.some(isNaN)) return showError('Enter valid space-separated page numbers.');
+  if (refs.some(n => n < 0 || !Number.isInteger(n))) return showError('Page numbers must be non-negative integers.');
+  if (isNaN(nf) || nf < 1 || nf > 10) return showError('Frame count must be between 1 and 10.');
+
+  let steps;
+  if (selectedAlgo === 'FIFO') steps = runFIFO(refs, nf);
+  else if (selectedAlgo === 'Optimal') steps = runOptimal(refs, nf);
+  else steps = runLRU(refs, nf);
+
+  renderResults(steps, nf, selectedAlgo, refs.length);
+}
+
+function renderResults(steps, nf, algo, total) {
+  const faults = steps.filter(s => !s.hit).length;
+  const hits = steps.filter(s => s.hit).length;
+  const ratio = (hits / steps.length * 100).toFixed(1);
+
+  // Results strip
+  document.getElementById('resultsBody').innerHTML = `
+    <div class="results-strip">
+      <div class="result-cell">
+        <div class="result-cell-label">Algorithm</div>
+        <div class="result-cell-value" style="font-size:28px">${algo}</div>
+      </div>
+      <div class="result-cell">
+        <div class="result-cell-label">Page Faults</div>
+        <div class="result-cell-value red">${faults}</div>
+      </div>
+      <div class="result-cell">
+        <div class="result-cell-label">Page Hits</div>
+        <div class="result-cell-value green">${hits}</div>
+      </div>
+      <div class="result-cell">
+        <div class="result-cell-label">Hit Ratio</div>
+        <div class="result-cell-value orange">${ratio}%</div>
+        <div class="ratio-bar-outer"><div class="ratio-bar-inner" style="width:${ratio}%"></div></div>
+      </div>
+      <div class="result-cell">
+        <div class="result-cell-label">Total References</div>
+        <div class="result-cell-value">${total}</div>
+      </div>
+    </div>
+  `;
+
+  // Trace table
+  let frameCols = Array.from({length: nf}, (_, i) => `<th class="center">Frame ${i+1}</th>`).join('');
+  let rows = steps.map((s, i) => {
+    let cls = s.hit ? 'row-hit' : 'row-fault';
+    let fCells = Array.from({length: nf}, (_, j) => {
+      let v = s.frames[j];
+      if (v === undefined) return `<td class="center frame-val empty">—</td>`;
+      let isNew = !s.hit && v === s.newPage;
+      return `<td class="center frame-val${isNew ? ' new-page' : ''}">${v}</td>`;
+    }).join('');
+    let badge = s.hit
+      ? `<span class="badge badge-hit">HIT</span>`
+      : `<span class="badge badge-fault">FAULT</span>`;
+    return `<tr class="${cls}">
+      <td style="color:var(--text-muted);font-family:var(--mono);font-size:11px">${i+1}</td>
+      <td class="page-num">${s.page}</td>
+      ${fCells}
+      <td class="center">${badge}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('traceTable').innerHTML = `
+    <thead><tr><th>#</th><th>Page</th>${frameCols}<th class="center">Status</th></tr></thead>
+    <tbody>${rows}</tbody>
+  `;
+
+  const notes = {
+    FIFO: 'FIFO evicts the page that has been in memory the longest. A queue tracks insertion order — the oldest page is always replaced first.',
+    Optimal: 'OPT (Optimal) evicts the page that will not be used for the longest time in the future. It requires future knowledge, making it a theoretical benchmark.',
+    LRU: 'LRU evicts the page least recently accessed. It tracks access history and replaces the page whose last use occurred furthest in the past.',
+  };
+  document.getElementById('algoNote').textContent = notes[algo];
+  document.getElementById('traceSection').style.display = 'block';
+}
+
+// Auto-run on load
+runSimulation();
+</script>
+</body>
+</html>
